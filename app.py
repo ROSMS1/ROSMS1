@@ -8,113 +8,123 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- Style CSS optimisé pour smartphone ---
+# --- Styles CSS Personnalisés (Fusion des deux styles HTML) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #f8fafc; }
-    [data-testid="stMetricValue"] { font-size: 1.5rem !important; color: #1e40af; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #ffffff;
-        border-radius: 8px;
-        padding: 8px 16px;
-    }
+    /* Global */
+    .stApp { background-color: #f3f4f6; }
+    
+    /* Style Onglet 1 (Clair comme solaire.html) */
+    .dim-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; color: #374151; }
+    
+    /* Style Onglet 2 (Sombre comme Power_dimension.html) */
+    .diag-container { background-color: #0f172a; color: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #334155; }
+    .metric-card { background: #1e293b; border-radius: 12px; padding: 15px; border: 1px solid #334155; text-align: center; }
+    
+    /* Polices */
     html, body, [class*="css"] { font-size: 0.95rem; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- Constantes Techniques ---
 RHO = 0.0175 
-SECTIONS_STD = [10, 16, 25, 35, 50, 70, 95, 120, 150]
-CALIBRES_DJ = [10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200]
-AMPACITE_CABLE = {10: 50, 16: 68, 25: 89, 35: 110, 50: 134, 70: 171, 95: 210, 120: 240, 150: 280}
+DATA_CABLES = {1.5: 15, 2.5: 21, 4: 28, 6: 36, 10: 50, 16: 68, 25: 89, 35: 110, 50: 134, 70: 171, 95: 210, 120: 240, 150: 280}
+SECTIONS_STD = sorted(list(DATA_CABLES.keys()))
+CALIBRES_DJ = [2, 4, 6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200]
 
-# Liste des batteries suggérées (Nom: [Tension_Unitaire, Capacité_Ah])
 DICT_BATTERIES = {
-    "2V / 800Ah (OPzV)": [2, 800],
-    "12V / 200Ah (Gel)": [12, 200],
-    "2V / 1000Ah (Industriel)": [2, 1000],
-    "48V / 200Ah (Lithium/Pack)": [48, 200]
+    "2V 800Ah (OPzV)": [2, 800],
+    "2V 1000Ah (Industriel)": [2, 1000],
+    "12V 200Ah (Gel)": [12, 200],
+    "48V 100Ah (Lithium)": [48, 100],
+    "48V 200Ah (Lithium)": [48, 200]
 }
 
 def main():
-    st.title("📡 ROSMS1 Hybrid Expert")
+    st.markdown("<h1 style='text-align: center; color: #1e40af;'>📡 ROSMS1 Hybrid Expert</h1>", unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs(["📊 Dimensionnement", "⚡ Câblage & Sécurité"])
+    tab1, tab2 = st.tabs(["📊 Dimensionnement Solaire", "🛡️ Diagnostic Câblage"])
 
     # ---------------------------------------------------------
-    # INTERFACE 1 : DIMENSIONNEMENT & AUTONOMIE
+    # INTERFACE 1 : DIMENSIONNEMENT (Style Solaire.html)
     # ---------------------------------------------------------
     with tab1:
-        st.subheader("⚙️ Données du Site")
-        col_a, col_b = st.columns(2)
-        with col_a:
+        st.markdown("<div class='dim-card'>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
             i_site = st.number_input("Courant Charge Site (A)", value=25.0, step=1.0)
             v_site = st.selectbox("Tension Système (V)", [48, 24, 12], index=0)
-        with col_b:
-            choix_bat = st.selectbox("Modèle de Batterie", list(DICT_BATTERIES.keys()))
-            h_visée = st.number_input("Autonomie visée (h)", value=24.0, step=1.0)
+            p_pv_u = st.number_input("Puissance Panneau Solaire (Wc)", value=550, step=10)
+        with col2:
+            choix_bat = st.selectbox("Modèle Batterie", list(DICT_BATTERIES.keys()))
+            h_auto = st.number_input("Autonomie souhaitée (h)", value=24.0, step=1.0)
+            dist_bat = st.number_input("Distance Bat - Rectifieur (m)", value=3.0, step=0.5)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # Récupération des caractéristiques du modèle choisi
+        # Calculs (Logique solaire.html)
         v_bat_u, ah_bat_u = DICT_BATTERIES[choix_bat]
-
-        # --- CALCULS ---
-        # 1. Nombre de batteries en série pour atteindre la tension système
+        p_charge = i_site * v_site
+        cap_req = (p_charge * h_auto) / (v_site * 0.8)
         nb_serie = math.ceil(v_site / v_bat_u)
-
-        # 2. Nombre de branches en parallèle pour l'autonomie visée (DoD 70%)
-        # Capacité nécessaire = (Courant * Heures) / 0.7
-        cap_necessaire = (i_site * h_visée) / 0.7
-        nb_para = math.ceil(cap_necessaire / ah_bat_u)
+        nb_para = math.ceil(cap_req / ah_bat_u)
         
-        # 3. Autonomie Réelle avec ce nombre de branches
-        cap_totale_installee = nb_para * ah_bat_u
-        autonomie_reelle = (cap_totale_installee * 0.7) / i_site
+        # Solaire & GE
+        i_rech = (nb_para * ah_bat_u) * 0.1
+        i_tot_charge = i_site + i_rech
+        p_sol_wc = ((p_charge * 24 / 1000) * 1.3 / 5) * 1000
+        nb_pv = math.ceil(p_sol_wc / p_pv_u)
+        kva_ge = ((i_tot_charge * v_site) / 800) * 1.25
 
-        # 4. Solaire & GE
-        i_rech = cap_totale_installee * 0.1
-        i_total = i_site + i_rech
-        nb_pv = math.ceil((i_total * v_site * 1.3 / 5) / 550) # Panneau 550Wc
-        kva_ge = ((i_total * v_site / 800) * 1.25)
-
-        st.divider()
-        st.subheader("📋 Résultat de l'Expert")
-        
-        m1, m2 = st.columns(2)
-        with m1:
-            st.metric("Branches en Parallèle", f"{nb_para}")
-            st.metric("Total Unités", f"{nb_para * nb_serie} bat.")
-            st.metric("Panneaux (550Wc)", f"{nb_pv} mod.")
-        with m2:
-            st.warning(f"**Autonomie : {autonomie_reelle:.1f} heures**")
-            st.metric("Capacité Totale", f"{cap_totale_installee} Ah")
-            st.metric("Groupe (GE)", f"{kva_ge:.1f} kVA")
+        # Affichage Résultats
+        st.subheader("📋 Bilan Matériel")
+        res1, res2, res3 = st.columns(3)
+        res1.metric("Panneaux", f"{nb_pv} modules")
+        res2.metric("Total Batteries", f"{nb_para * nb_serie} unités")
+        res3.metric("Groupe GE", f"{kva_ge:.1f} kVA")
+        st.info(f"💡 **Note :** Couplage {nb_para} branche(s) de {nb_serie} batteries en série.")
 
     # ---------------------------------------------------------
-    # INTERFACE 2 : CÂBLAGE & PROTECTIONS
+    # INTERFACE 2 : CÂBLAGE & SÉCURITÉ (Style Power_dimension.html)
     # ---------------------------------------------------------
     with tab2:
-        st.subheader("🛡️ Sécurité Câblage")
-        # On récupère le courant total calculé en tab1
-        i_max_calc = i_site + (nb_para * ah_bat_u * 0.1)
+        st.markdown("<div class='diag-container'>", unsafe_allow_html=True)
         
-        i_input = st.number_input("Courant Total à protéger (A)", value=float(i_max_calc), step=1.0)
-        dist = st.number_input("Longueur Câble (m)", value=5.0, step=1.0)
+        # Entrées style Power_dimension
+        v_serv = st.number_input("Tension de service (V)", value=float(v_site), step=0.1, key="v_diag")
+        i_diag = st.number_input("Intensité de la charge (A)", value=float(i_tot_charge), step=0.5)
+        dist_c = st.number_input("Longueur câble (mètres aller-retour)", value=float(dist_bat * 2), step=1.0)
+        marge = st.slider("Marge de sécurité (%)", 0, 50, 20)
         
-        # Chute de tension max 1%
-        s_chute = (2 * RHO * dist * i_input) / (v_site * 0.01)
-        s_retenue = next((s for s in SECTIONS_STD if s >= s_chute and AMPACITE_CABLE[s] >= i_input), 150)
-        dj_val = next((d for d in CALIBRES_DJ if d >= i_input * 1.25), "Hors Limite")
+        i_totale_marge = i_diag * (1 + marge / 100)
+        
+        # Calcul Chute de tension (3% max)
+        delta_u_max = v_serv * 0.03
+        s_chute = (2 * RHO * dist_c * i_totale_marge) / delta_u_max
+        
+        # Sélection section standard
+        s_retenue = next((s for s in SECTIONS_STD if s >= s_chute and DATA_CABLES[s] >= i_totale_marge), None)
+        dj_val = next((d for d in CALIBRES_DJ if d > i_totale_marge), "H-L")
 
-        st.divider()
-        c1, c2 = st.columns(2)
-        c1.metric("Section Câble", f"{s_retenue} mm²")
-        c2.metric("Disjoncteur", f"{dj_val} A")
-
-        if isinstance(dj_val, (int, float)) and dj_val > AMPACITE_CABLE.get(s_retenue, 0):
-            st.error("🔥 Risque d'incendie détecté !")
-        else:
-            st.success("✅ Dimensionnement sécurisé")
+        # Diagnostics visuels
+        if s_retenue:
+            if dj_val != "H-L" and dj_val >= DATA_CABLES[s_retenue]:
+                st.error(f"🔥 **ALERTE :** Disjoncteur ({dj_val}A) > Limite câble ({DATA_CABLES[s_retenue]}A). Risque de feu !")
+            elif s_chute > s_retenue:
+                st.warning(f"⚠️ **Chute de tension :** Distance élevée, prévoyez une section supérieure.")
+            else:
+                st.success("✅ Dimensionnement sécurisé conforme.")
+        
+        # Grille de résultats style sombre
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"<div class='metric-card'><small>INTENSITÉ (+MARGE)</small><br><span style='color:#38bdf8; font-size:1.5rem; font-weight:bold;'>{i_totale_marge:.1f} A</span></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"<div class='metric-card'><small>SECTION CÂBLE</small><br><span style='color:#34d399; font-size:1.5rem; font-weight:bold;'>{s_retenue if s_retenue else 'Trop gros'} mm²</span></div>", unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"<div class='metric-card'><small>DISJONCTEUR</small><br><span style='color:#f87171; font-size:1.5rem; font-weight:bold;'>{dj_val} A</span></div>", unsafe_allow_html=True)
+            
+        st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
